@@ -5,8 +5,10 @@ def main():
     HOST = "localhost"
     PORT = 4221
     SERVER_ADDRESS = (HOST, PORT)
-    HTTP_STATUS_OK_RESPONSE = b"HTTP/1.1 200 OK\r\n\r\n"
-    HTTP_STATUS_NOT_FOUND_RESPONSE = b"HTTP/1.1 404 Not Found\r\n\r\n"
+    CRLF = "\r\n"
+    HTTP_STATUS_OK_RESPONSE = f"HTTP/1.1 200 OK"
+    HTTP_STATUS_NOT_FOUND_RESPONSE = f"HTTP/1.1 404 Not Found"
+    HTTP_CONTENT_TYPE_TEXT_PLAIN_RESPONSE = f"Content-Type: text/plain"
     BUFFER_SIZE = 1024
 
     server_socket = socket.create_server(SERVER_ADDRESS, reuse_port=True)
@@ -15,17 +17,27 @@ def main():
     with conn:
         print(f"Connected by {addr}")
         while True:
-            data = conn.recv(BUFFER_SIZE)
+            data = conn.recv(BUFFER_SIZE).decode()
             if not data: break
             
-            request_list = data.split(b"\r\n")
-            start_line = request_list[0].split()
+            request = data.split(f"{CRLF}")
+            start_line = request[0].split()
             path = start_line[1]
-            
-            if path == b"/":
-                conn.sendall(HTTP_STATUS_OK_RESPONSE)
+
+            if path == "/":
+                conn.sendall(f"{HTTP_STATUS_OK_RESPONSE}{CRLF}{CRLF}".encode())
+            elif path.startswith("/echo"):
+                content_response = path.replace("/echo/", "")
+                
+                body = ""
+                body += HTTP_STATUS_OK_RESPONSE + CRLF
+                body += HTTP_CONTENT_TYPE_TEXT_PLAIN_RESPONSE + CRLF
+                body += f"Content-Length: {len(content_response)}" + CRLF + CRLF
+                body += content_response + CRLF
+
+                conn.sendall(body.encode())
             else:
-                conn.sendall(HTTP_STATUS_NOT_FOUND_RESPONSE)
+                conn.sendall(f"{HTTP_STATUS_NOT_FOUND_RESPONSE}{CRLF}{CRLF}".encode())
 
 
 if __name__ == "__main__":
