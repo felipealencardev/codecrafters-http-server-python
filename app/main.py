@@ -6,6 +6,7 @@ import os
 
 CRLF = "\r\n"
 HTTP_STATUS_OK_RESPONSE = "HTTP/1.1 200 OK"
+HTTP_STATUS_OK_CONTENT_CREATED_RESPONSE = "HTTP/1.1 201 OK"
 HTTP_STATUS_NOT_FOUND_RESPONSE = "HTTP/1.1 404 Not Found"
 HTTP_CONTENT_TYPE_TEXT_PLAIN = "text/plain"
 HTTP_CONTENT_TYPE_OCTET_STREAM = "application/octet-stream"
@@ -27,38 +28,57 @@ def handle_client_connection(server_socket):
         data = client_connection.recv(BUFFER_SIZE).decode()
         request = data.split(CRLF)
         start_line = request[0].split()
+        method = start_line[0]
         path = start_line[1]
         directory_path = get_directory_path()
 
-        if path == "/":
-            client_connection.sendall(f"{HTTP_STATUS_OK_RESPONSE}{CRLF}{CRLF}".encode())
-        elif path.startswith("/echo"):
-            content_response = path.replace("/echo/", "")
-            send_response_body(client_connection, 
-                               content_response, 
-                               HTTP_CONTENT_TYPE_TEXT_PLAIN)
-        elif path.startswith("/user-agent"):
-            user_agent = get_user_agent_from_request(request)
-            send_response_body(client_connection, 
-                               user_agent, 
-                               HTTP_CONTENT_TYPE_TEXT_PLAIN)
-        elif directory_path != "" and path.startswith("/files"):
-            filename = path.replace("/files/", "")
-            file_path = os.path.join(directory_path, filename)
-            if os.path.isfile(file_path):
-                try:
-                    with open(file_path, "rb") as file:
-                        file_contents = file.read()
-                        send_response_body(client_connection, 
-                                           file_contents.decode(), 
-                                           HTTP_CONTENT_TYPE_OCTET_STREAM)
-                except IOError as error:
-                    raise Exception(f"Could not open the file. Error: {error}")
+        if method == "GET":
+            if path == "/":
+                send_ok_response(client_connection, HTTP_STATUS_OK_RESPONSE)
+            elif path.startswith("/echo"):
+                content_response = path.replace("/echo/", "")
+                send_response_body(client_connection, 
+                                content_response, 
+                                HTTP_CONTENT_TYPE_TEXT_PLAIN)
+            elif path.startswith("/user-agent"):
+                user_agent = get_user_agent_from_request(request)
+                send_response_body(client_connection, 
+                                user_agent, 
+                                HTTP_CONTENT_TYPE_TEXT_PLAIN)
+            elif directory_path != "" and path.startswith("/files"):
+                filename = path.replace("/files/", "")
+                file_path = os.path.join(directory_path, filename)
+                if os.path.isfile(file_path):
+                    try:
+                        with open(file_path, "rb") as file:
+                            file_contents = file.read()
+                            send_response_body(client_connection, 
+                                            file_contents.decode(), 
+                                            HTTP_CONTENT_TYPE_OCTET_STREAM)
+                    except IOError as error:
+                        raise Exception(f"Could not open the file. Error: {error}")
+                else:
+                    send_not_found_response(client_connection)
             else:
                 send_not_found_response(client_connection)
-        else:
-            send_not_found_response(client_connection)
+        elif method == "POST":
+            if directory_path != "" and path.startswith("/files"):
+                filename = path.replace("/files/", "")
+                file_path = os.path.join(directory_path, filename)
+                file_content = get_request_body(request)
+                try:
+                    with open(file_path, "wb") as file:
+                        file.write(file_content.encode())
+                        file.close()
+                        send_ok_response(client_connection, HTTP_STATUS_OK_CONTENT_CREATED_RESPONSE)
+                except IOError as error:
+                    raise Exception(f"Could not write the file. Error: {error}")
 
+        else:
+            send_not_found_response(client_connection) 
+
+def send_ok_response(client_connection, status):
+    client_connection.sendall(f"{status}{CRLF}{CRLF}".encode())
 def send_not_found_response(client_connection):
     client_connection.sendall(f"{HTTP_STATUS_NOT_FOUND_RESPONSE}{CRLF}{CRLF}".encode())
 
@@ -71,16 +91,14 @@ def get_user_agent_from_request(request):
 
 def build_response_body(content, content_type):
     body = ""
-    body += HTTP_STATUS_OK_RESPONSE + CRLF
-    body += "Content-Type: " + content_type + CRLF
-    body += f"Content-Length: {len(content)}" + CRLF + CRLF
-    body += content + CRLF
+    body += f"{HTTP_STATUS_OK_RESPONSE}{CRLF}"
+    body += f"Content-Type: {content_type}{CRLF}"
+    body += f"Content-Length: {len(content)}{CRLF}{CRLF}"
+    body += f"{content}{CRLF}"
     return body
 
 def send_response_body(conn, content, content_type):
     body = build_response_body(content, content_type)
-    print("body")
-    print(body)
     conn.sendall(body.encode())
 
 def get_directory_path():
@@ -91,6 +109,16 @@ def get_directory_path():
             directory_path = sys.argv[directory_index]
             
     return directory_path
+
+def get_request_body(request):
+    body = ""
+    i = 0
+    while i < len(request):
+        if request[i] == "":
+            body = request[i+1]
+            break
+        i += 1
+    return body
 
 if __name__ == "__main__":
     main()
